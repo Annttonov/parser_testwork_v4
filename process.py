@@ -41,18 +41,18 @@ def parse_tables_with_variant(string):
             if var_1 != {} and var_1.get('num') == var_match.group(1):
                 var_2 = {
                     'num': var_match.group(1),
-                    'text': item[var_match.end():]
+                    'text': item
                 }
             elif var_1 == {}:
                 var_1 = {
                     'num': var_match.group(1),
-                    'text': item[var_match.end():]
+                    'text': item
                 }
             else:
                 print(f'{var_1.keys()}\n{var_2.keys()}')
                 var_1 = {
                     'num': var_match.group(1),
-                    'text': item[var_match.end():]
+                    'text': item
                 }
         elif var_1 != {}:
             var_2 = {
@@ -110,29 +110,32 @@ def get_item(content, index):
             index += 1
             next_item = content[index]
             if var_list != []:
-                table.append(var_list)
+                for i in var_list:
+                    table.append(i)
             var_list = []
-        table.append([var_1, var_2])
+        for i in [var_1, var_2]:
+            table.append(i)
         item = table
     index += 1
     return item, index
 
 
-def find_chapter_index(content: list, data: list, start_index: int):
+def find_chapter_index(content: list, start_index: int):
     index = start_index
     chapter_data = list()
     while index < len(content):
         item, index = get_item(content, index)
         if isinstance(item, list):
-            item = 'ТАБЛИЦА\n-----------------------------------\n'
+            for i in item:
+                chapter_data.append(i.get('text'))
+            continue
         elif item.lower() == 'ответы':
-            return index - 1, data, chapter_data
+            return index - 1, chapter_data
         chapter_match = CHAPTER_RE.search(item)
         if chapter_match:
-            return index - 1, data, chapter_data
+            return index - 1, chapter_data
         chapter_data.append(item)
-        data.append(item)
-    return index - 1, data, chapter_data
+    return index - 1, chapter_data
 
 
 def find_variant(match, data, next_index):
@@ -142,24 +145,24 @@ def find_variant(match, data, next_index):
             return True
 
 
-def parse_chapter(data):
+def parse_chapter(data, result):
     if data == []:
-        return
+        return result
     index = 0
     while index < len(data):
         item = data[index]
         if find_variant(VAR_RE.search(item), data, index + 1):
-            index = parse_variant(data, index + 1)
+            result, index = parse_variant(data, index + 1, result)
         elif LEVEL_RE.search(item):
-            index = parse_level(data, index)
+            result, index = parse_level(data, index, result)
         else:
             index += 1
         if CHAPTER_RE.search(item):
-            return
-    return
+            return result
+    return result
 
 
-def parse_variant(data, index):
+def parse_variant(data, index, result):
     while index < len(data):
         item = data[index]
         task_number_match = TASK_NUMBER_RE.search(item)
@@ -168,17 +171,17 @@ def parse_variant(data, index):
             unparse_tasks, index = find_tasks(
                 data, index, task_number_match.group(1))
             tasks_list = parse_tasks(unparse_tasks)
-            save_tasks(tasks_list)
+            result = save_tasks(tasks_list, result)
             continue
         if find_variant(VAR_RE.search(item), data, index + 1) or (
                 LEVEL_RE.search(item)):
-            return index
+            return result, index
         if CHAPTER_RE.search(item):
-            return index
-    return index
+            return result, index
+    return result, index
 
 
-def parse_level(data, index):
+def parse_level(data, index, result):
     current_level = ''
     tasks_list = {'task_condition': data[0]}
     while index < len(data):
@@ -193,10 +196,10 @@ def parse_level(data, index):
                 unparse_tasks, current_level, tasks_list)
             continue
         if CHAPTER_RE.search(item):
-            save_tasks(tasks_list)
-            return index
-    save_tasks(tasks_list)
-    return index
+            result = save_tasks(tasks_list, result)
+            return result, index
+    result = save_tasks(tasks_list, result)
+    return result, index
 
 
 def parse_level_tasks(unparse_tasks, level, tasks):
@@ -320,10 +323,11 @@ def write_item(data, item, key):
     return data
 
 
-def save_tasks(tasks_list: dict):
+def save_tasks(tasks_list: dict, result: dict):
     for item in tasks_list.items():
-
-        print(item)
+        result = {'item': item}
+        print(result)
+    return result
 
 
 def find_tasks(data, index, task_number):
@@ -358,26 +362,21 @@ def process(file_path):
     doc = MarkdownAnalyzer(file_path)
     content = doc.text.split("\n")
     index = 0
-    data = []
+    result = {}
     while index < len(content[:]):
         item, index = get_item(content, index)
-        if isinstance(item, list):
-            item = 'ТАБЛИЦА\n-----------------------------------\n'
-        elif item.lower() == 'ответы':
+        if item.lower() == 'ответы':
             break
         chapter_match = CHAPTER_RE.search(item)
         if chapter_match:
-            index, data, chapter_data = find_chapter_index(
+            index, chapter_data = find_chapter_index(
                 content,
-                data,
                 start_index=index)
-            parse_chapter(chapter_data)
+            result = parse_chapter(chapter_data, result)
         else:
             index += 1
-
-        data.append(item)
-
-    return data
+    print(result)
+    return result
 
 
 if __name__ == '__main__':
