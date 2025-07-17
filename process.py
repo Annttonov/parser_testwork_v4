@@ -7,7 +7,8 @@ from patterns import (
     VAR_RE,
     LEVEL_RE,
     TASK_RE,
-    TASK_NUMBER_RE
+    TASK_NUMBER_RE,
+    SYMBOLS
 )
 
 input_path = 'input.md'
@@ -142,19 +143,19 @@ def find_variant(match, data, next_index):
     if match:
         task_number_match = TASK_NUMBER_RE.search(data[next_index])
         if task_number_match:
-            return True
+            return match
 
 
-def parse_chapter(data, result):
+def parse_chapter(data, chapter_num, result):
     if data == []:
         return result
     index = 0
     while index < len(data):
         item = data[index]
         if find_variant(VAR_RE.search(item), data, index + 1):
-            result, index = parse_variant(data, index + 1, result)
+            result, index = parse_variant(data, index, chapter_num, result)
         elif LEVEL_RE.search(item):
-            result, index = parse_level(data, index, result)
+            result, index = parse_level(data, index, chapter_num, result)
         else:
             index += 1
         if CHAPTER_RE.search(item):
@@ -162,16 +163,29 @@ def parse_chapter(data, result):
     return result
 
 
-def parse_variant(data, index, result):
+def normalize_variant(symbol: str):
+    symbol = SYMBOLS[symbol] if symbol in SYMBOLS else symbol
+    return symbol if symbol.isalnum() else symbol.upper()
+
+
+def parse_variant(data, index, chapter_num, result):
+    current_variant = normalize_variant(VAR_RE.search(data[index]).group(1))
+    index += 1
     while index < len(data):
         item = data[index]
         task_number_match = TASK_NUMBER_RE.search(item)
         if task_number_match:
+            task_number = task_number_match.group(1)
             index += 1
             unparse_tasks, index = find_tasks(
-                data, index, task_number_match.group(1))
+                data, index, task_number)
             tasks_list = parse_tasks(unparse_tasks)
-            result = save_tasks(tasks_list, result)
+            result = save_tasks(
+                tasks_list=tasks_list,
+                result=result,
+                chapter_num=chapter_num,
+                variant=current_variant,
+                task_number=task_number)
             continue
         if find_variant(VAR_RE.search(item), data, index + 1) or (
                 LEVEL_RE.search(item)):
@@ -181,7 +195,7 @@ def parse_variant(data, index, result):
     return result, index
 
 
-def parse_level(data, index, result):
+def parse_level(data, index, chapter_num, result):
     current_level = ''
     tasks_list = {'task_condition': data[0]}
     while index < len(data):
@@ -196,9 +210,17 @@ def parse_level(data, index, result):
                 unparse_tasks, current_level, tasks_list)
             continue
         if CHAPTER_RE.search(item):
-            result = save_tasks(tasks_list, result)
+            result = save_tasks(
+                tasks_list,
+                result,
+                chapter_num,
+                level=True)
             return result, index
-    result = save_tasks(tasks_list, result)
+    result = save_tasks(
+        tasks_list,
+        result,
+        chapter_num,
+        level=True)
     return result, index
 
 
@@ -222,6 +244,12 @@ def parse_level_tasks(unparse_tasks, level, tasks):
     return tasks
 
 
+def normalize_item(item):
+    item = re.sub(r'\[\^\d\]', '', item, 1)
+    item = re.sub(r'^a+?\)\s', 'а) ', item, 1)
+    return item
+
+
 def parse_tasks(unparse_tasks):
     tasks = {
         'task_condition': unparse_tasks[0],
@@ -235,10 +263,8 @@ def parse_tasks(unparse_tasks):
         tasks['task'] = {'v1': unparse_tasks[index_v1]}
         return tasks
     while index_v1 < len(unparse_tasks) and index_v2 < len(unparse_tasks):
-        item_v1 = re.sub(r'\[\^\d\]', '', unparse_tasks[index_v1], 1)
-        item_v1 = re.sub(r'^a+?\)\s', 'а) ', item_v1, 1)
-        item_v2 = re.sub(r'\[\^\d\]', '', unparse_tasks[index_v2], 1)
-        item_v2 = re.sub(r'^a+?\)\s', 'а) ', item_v2, 1)
+        item_v1 = normalize_item(unparse_tasks[index_v1])
+        item_v2 = normalize_item(unparse_tasks[index_v2])
         v1_match = TASK_RE.search(item_v1)
         v2_match = TASK_RE.search(item_v2)
         if v1_match and v2_match:
@@ -267,6 +293,10 @@ def parse_tasks(unparse_tasks):
                 tasks[current_task_symbol] = {
                     'v1': item_v1[v1_match.end():]
                 }
+            elif current_task_symbol == '':
+                if not tasks.get('task'):
+                    tasks['task'] = {}
+                tasks['task'] = write_item(tasks['task'], item_v1, 'v1')
             else:
                 tasks[current_task_symbol] = {
                     'v1': item_v1
@@ -323,10 +353,44 @@ def write_item(data, item, key):
     return data
 
 
-def save_tasks(tasks_list: dict, result: dict):
-    for item in tasks_list.items():
-        result = {'item': item}
-        print(result)
+def save_tasks(tasks_list: dict,
+               result: list,
+               chapter_num: str,
+               variant: str = None,
+               task_number: str = None,
+               level: str = None,):
+    for key, value in tasks_list.items():
+        if key == 'task_condition':
+            text = f'Условие для задачи {
+                task_number if task_number else chapter_num}'
+            item = {
+                    'id_tasks_book': text,
+                    'task': value,
+                    'classes': '10;11',
+                    'paragraph': chapter_num,
+                    'topic_id': 1,
+                    'level': 1
+                }
+        else:
+            for number, task in value.items():
+                if level:
+                    task_number = number
+                    text = f'Уровень_{key}__задача_{task_number}'
+                else:
+                    text = f'Вариант_{
+                        variant.upper()+number[-1]
+                        }__задача_{task_number}{
+                        '' if key == 'task' else f'__условие_{key}'}'
+                item = {
+                    'id_tasks_book': text,
+                    'task': task,
+                    'classes': '10;11',
+                    'paragraph': chapter_num,
+                    'topic_id': 1,
+                    'level': 1
+                }
+        result.append(item)
+
     return result
 
 
@@ -358,11 +422,9 @@ def find_tasks(data, index, task_number):
         return unparse_tasks, index
 
 
-def process(file_path):
-    doc = MarkdownAnalyzer(file_path)
-    content = doc.text.split("\n")
+def process_for_tasks(content):
     index = 0
-    result = {}
+    result = []
     while index < len(content[:]):
         item, index = get_item(content, index)
         if item.lower() == 'ответы':
@@ -372,17 +434,34 @@ def process(file_path):
             index, chapter_data = find_chapter_index(
                 content,
                 start_index=index)
-            result = parse_chapter(chapter_data, result)
+            result = parse_chapter(
+                chapter_data, chapter_match.group(1)[:-1], result)
         else:
             index += 1
-    print(result)
-    return result
+    return result, find_chapter_index
+
+
+def process_for_answer(content, tasks, index):
+    return tasks, index
+
+
+def process_for_outline():
+    pass
+
+
+def process_for_authors():
+    pass
 
 
 if __name__ == '__main__':
-    result = process(input_path)
-    # for item in result[:200]:
-    #     print(item)
+    doc = MarkdownAnalyzer(input_path)
+    content = doc.text.split("\n")
+    result, index = process_for_tasks(content)
+
+    for item in result[:]:
+        for i in item.items():
+            print(i,)
+        print('\n')
     print(
         '‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾\n',
         "ДАЛЬШЕ ИДУТ ТАБЛИЦЫ, ОТВЕТЫ, СОДЕРЖАНИЕ\n",
