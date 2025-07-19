@@ -1,13 +1,14 @@
 import re
 
 from patterns import (
-    ANSWER_CHAPTER_RE,
+    ONLY_CHAPTER_RE,
     CHAPTER_RE,
     VAR_RE,
     LEVEL_RE,
     TASK_RE,
     TASK_NUMBER_RE,
-    SYMBOLS
+    SYMBOLS,
+    CLASSES
 )
 
 input_path = 'input.md'
@@ -15,15 +16,77 @@ input_path = 'input.md'
 LINE_STARTED_SYMBOLS = ("#", "$$", ">", "|")
 
 
-def normalize_symbol(symbol):
-    return SYMBOLS[symbol] if symbol in SYMBOLS else symbol
+class Parser:
+
+    def find_index(self, content, name):
+        index = 0
+        while index < len(content):
+            item: str = content[index]
+            if item.lower().endswith(name):
+                return index + 1
+            index += 1
+        raise ValueError('Требуемое значение не найдено!')
+
+    def normalize_symbol(self, symbol):
+        return SYMBOLS[symbol] if symbol in SYMBOLS else symbol
 
 
-class TaskParcer:
+class TaskParcer(Parser):
 
-    def __init__(self, content, answers):
+    def __init__(self, content, answers, outline):
+        self.outline = outline
         self.answers = answers
+        self.description = self.get_description(content)
         self.tasks, self.index = self.process(content)
+
+    def process(self, content):
+        index = 0
+        result = []
+        while index < len(content):
+            item, index = self.get_item(content, index)
+            if item.lower() == 'ответы':
+                index += 1
+                break
+            chapter_match = CHAPTER_RE.search(item)
+            if chapter_match:
+                index, chapter_data = self.find_chapter_index(
+                    content,
+                    start_index=index)
+                chapter_symbol = self.normalize_symbol(
+                    chapter_match.group(1)[0])
+                chapter = chapter_symbol + chapter_match.group(1)[1:-1]
+                result = self.parse_chapter(
+                    chapter_data, chapter, result)
+            else:
+                index += 1
+        return result, index
+
+    def get_description(self, content):
+        item, index = self.get_item(content, 0)
+        description = {
+            'name': '',
+            'author': item,
+            'description': '',
+            'topic_id': '1',
+            'classes': CLASSES
+        }
+        while index < len(content):
+            item, index = self.get_item(content, index)
+            if item.lower() == 'тригонометрия':
+                break
+            if 'САМОСТОЯТЕЛЬНЫЕ и КОНТРОЛЬНЫЕ РАБОТЫ' in item:
+                description['name'] = item.capitalize()
+                continue
+            if 'Основные особенности предлагаемого сборника' in item:
+                text = str()
+                index += 1
+                while index < len(content):
+                    item, index = self.get_item(content, index)
+                    if item.lower() == 'тригонометрия':
+                        break
+                    text = f'{text}\n{item}' if text != '' else item
+                description['description'] = text
+                return description
 
     def get_normal_string(self, string, index, text):
         while True:
@@ -373,8 +436,8 @@ class TaskParcer:
                         'id_tasks_book': text,
                         'task': value,
                         'answer': 'Отсутствует',
-                        'classes': '10;11',
-                        'paragraph': chapter_num,
+                        'classes': CLASSES,
+                        'paragraph': self.outline[chapter_num]['id'],
                         'topic_id': 1,
                         'level': 1
                     }
@@ -396,7 +459,8 @@ class TaskParcer:
                         answer_key = f'CH({chapter_num})_VAR({
                             current_variant})_TSK{
                             f'({task_number})' if key == 'task' else f'({
-                                task_number})_CND({normalize_symbol(key).lower(
+                                task_number})_CND({
+                                    self.normalize_symbol(key).lower(
                                     )})'}'
                         answer = answers[answer_key]['answer'] if (
                             answer_key in answers) else 'Отстутствует'
@@ -404,8 +468,8 @@ class TaskParcer:
                         'id_tasks_book': text,
                         'task': task,
                         'answer': answer,
-                        'classes': '10;11',
-                        'paragraph': chapter_num,
+                        'classes': CLASSES,
+                        'paragraph': self.outline[chapter_num]['id'],
                         'topic_id': 1,
                         'level': 1
                     }
@@ -441,41 +505,11 @@ class TaskParcer:
         if unparse_tasks != []:
             return unparse_tasks, index
 
-    def process(self, content):
-        index = 0
-        result = []
-        while index < len(content[:2500]):
-            item, index = self.get_item(content, index)
-            if item.lower() == 'ответы':
-                index += 1
-                break
-            chapter_match = CHAPTER_RE.search(item)
-            if chapter_match:
-                index, chapter_data = self.find_chapter_index(
-                    content,
-                    start_index=index)
-                chapter_symbol = normalize_symbol(chapter_match.group(1)[0])
-                chapter = chapter_symbol + chapter_match.group(1)[1:-1]
-                result = self.parse_chapter(
-                    chapter_data, chapter, result)
-            else:
-                index += 1
-        return result, index
 
-
-class AnswerParser:
+class AnswerParser(Parser):
     def __init__(self, content):
 
         self.answers = self.process(content)
-
-    def find_index(self, content):
-        index = 0
-        while index < len(content):
-            item: str = content[index]
-            if item.lower().endswith('ответы'):
-                return index + 1
-            index += 1
-        raise ValueError('Требуемое значение не найдено!')
 
     def get_tables(self, data, index):
         table_list = list()
@@ -485,7 +519,7 @@ class AnswerParser:
             row: str = data[index]
             if row.endswith('|'):
                 items = row.split('|')
-                chapter_match = ANSWER_CHAPTER_RE.search(items[1].strip())
+                chapter_match = ONLY_CHAPTER_RE.search(items[1].strip())
                 if chapter_match and current_chapter == '':
                     current_chapter = chapter_match.group()
                     table.append(row)
@@ -532,8 +566,8 @@ class AnswerParser:
             variant = variant.strip()
             if variant == '':
                 continue
-            elif var_idx == 1 and ANSWER_CHAPTER_RE.search(variant):
-                chapter = normalize_symbol(variant[0]) + variant[1:]
+            elif var_idx == 1 and ONLY_CHAPTER_RE.search(variant):
+                chapter = self.normalize_symbol(variant[0]) + variant[1:]
                 continue
             else:
                 variant = self.normalize_variant(variant)
@@ -544,7 +578,8 @@ class AnswerParser:
                     key = f'CH({chapter})_VAR({variant})_TSK{
                         f'({task_number})' if task_number.isalnum() else f'({
                             task_number[0]})_CND({
-                                normalize_symbol(task_number[1]).lower()})'
+                                self.normalize_symbol(
+                                    task_number[1]).lower()})'
                     }'
                     task_name = f'Глава {chapter}, вариант {
                         variant} задача {
@@ -556,33 +591,82 @@ class AnswerParser:
 
     def process(self, content):
         answers = dict()
-        index = self.find_index(content)
+        index = self.find_index(content, 'ответы')
         tables, index = self.get_tables(content, index)
         for table in tables:
             answers = self.parse_table(table, answers)
         return answers
 
 
-def process_for_outline():
-    pass
+class OutlineParser(Parser):
 
+    def __init__(self, content):
+        self.outline = self.process(content)
 
-def process_for_authors():
-    pass
+    def process(self, content):
+        index = self.find_index(content, 'содержание')
+        result = self.parse_outline(content, index)
+        return result
+
+    def parse_outline(self, content, index):
+        id = 1
+        result = dict()
+        supreme_chapter = 0
+        while index < len(content):
+            row = content[index]
+            if row.endswith('|'):
+                row = row.split('|')
+                items = [row[i].strip() for i in range(1,
+                                                       len(row) - 1,
+                                                       1)]
+                chater_match = ONLY_CHAPTER_RE.search(items[0])
+                if chater_match:
+                    chapter_name = self.normalize_symbol(
+                        chater_match.group()[0]) + chater_match.group()[1:]
+                    name = chater_match.string[chater_match.end(
+                            ):].strip()
+                    name = name.replace('.', '', 1).strip() if name.startswith(
+                        '.') else name
+                    result[chapter_name] = {
+                        'id': id,
+                        'book_id': chapter_name,
+                        'name': name,
+                        'parent': supreme_chapter,
+                    }
+                    id += 1
+                elif items[-1] == '':
+                    key, value = result.popitem()
+                    value['name'] = f'{value['name']} {items[0]}'
+                    result[key] = value
+                elif items[-1].isalnum():
+                    item = {
+                        'id': id,
+                        'book_id': items[0],
+                        'name': items[0],
+                        'parent': 0,
+                    }
+                    result[id] = item
+                    supreme_chapter = id
+                    id += 1
+                elif items[0].lower() == 'работа' and (
+                            items[-1].lower() == 'стр.'):
+                    pass
+                elif items[0] == ':---':
+                    pass
+                else:
+                    raise ValueError('Неожиданное значение!')
+            elif row == '':
+                pass
+            elif 'самостоятельные и контрольные работы' in row.lower():
+                break
+            index += 1
+        return result
 
 
 if __name__ == '__main__':
     with open(input_path, 'r', encoding='utf-8') as f:
         content = f.read().split('\n')
-    parser_answer = AnswerParser(content)
-    answers = parser_answer.answers
-    parser_tasks = TaskParcer(content, answers)
+    outline = OutlineParser(content).outline
+    answers = AnswerParser(content).answers
+    parser_tasks = TaskParcer(content, answers, outline)
     tasks_data, index = parser_tasks.tasks, parser_tasks.index
-    for item in tasks_data[:]:
-        for i in item.items():
-            print(i,)
-        print('\n')
-    print(
-        '‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾\n',
-        "ДАЛЬШЕ ИДУТ ТАБЛИЦЫ, ОТВЕТЫ, СОДЕРЖАНИЕ\n",
-        '___________________________________________')

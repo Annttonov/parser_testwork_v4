@@ -1,10 +1,12 @@
 import re
 
+CLASSES = '10;11'
+
 TASK_RE = re.compile(r"^(\d{1,2}|\w)+?\)\s")
 
 CHAPTER_RE = re.compile(r"(^[А-ЯЁA-Z]-\d+\*?.?)+?\s.*")
 
-ANSWER_CHAPTER_RE = re.compile(r"^([A-ZА-ЯЁ]-\d{1,2}\*?)")
+ONLY_CHAPTER_RE = re.compile(r"^([A-ZА-ЯЁ]-\d{1,2}\*?)")
 
 TASK_NUMBER_RE = re.compile(r"^\(?(\d)\)?$")
 
