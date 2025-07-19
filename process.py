@@ -11,10 +11,6 @@ from patterns import (
     CLASSES
 )
 
-input_path = 'input.md'
-
-LINE_STARTED_SYMBOLS = ("#", "$$", ">", "|")
-
 
 class Parser:
 
@@ -33,11 +29,11 @@ class Parser:
 
 class TaskParcer(Parser):
 
-    def __init__(self, content, answers, outline):
-        self.outline = outline
-        self.answers = answers
+    def __init__(self, content):
+        self.outline = OutlineParser(content).outline
+        self.answers = AnswerParser(content).answers
         self.description = self.get_description(content)
-        self.tasks, self.index = self.process(content)
+        self.tasks = self.process(content)
 
     def process(self, content):
         index = 0
@@ -59,10 +55,11 @@ class TaskParcer(Parser):
                     chapter_data, chapter, result)
             else:
                 index += 1
-        return result, index
+        return result
 
     def get_description(self, content):
         item, index = self.get_item(content, 0)
+        result = list()
         description = {
             'name': '',
             'author': item,
@@ -86,7 +83,8 @@ class TaskParcer(Parser):
                         break
                     text = f'{text}\n{item}' if text != '' else item
                 description['description'] = text
-                return description
+                result.append(description)
+                return result
 
     def get_normal_string(self, string, index, text):
         while True:
@@ -661,12 +659,3 @@ class OutlineParser(Parser):
                 break
             index += 1
         return result
-
-
-if __name__ == '__main__':
-    with open(input_path, 'r', encoding='utf-8') as f:
-        content = f.read().split('\n')
-    outline = OutlineParser(content).outline
-    answers = AnswerParser(content).answers
-    parser_tasks = TaskParcer(content, answers, outline)
-    tasks_data, index = parser_tasks.tasks, parser_tasks.index
