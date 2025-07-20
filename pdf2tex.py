@@ -53,4 +53,9 @@ def ai_convert_pdf_to_md(pdf_file: str):
     return f
 
 
-ai_convert_pdf_to_md(input_path)
+if __name__ == '__main':
+    file_path = os.path.abspath(input(
+        'Введите путь к PDF-файлу относительно текущего каталога:\n'))
+    if not os.path.exists(file_path):
+        exit('неверный путь к файлу')
+    ai_convert_pdf_to_md(file_path)
