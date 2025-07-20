@@ -1,12 +1,20 @@
+'''Модуль для сохранения данных в EXCEL файл.'''
+import os
+
 import pandas
 
 from process import TaskParcer
 
 if __name__ == '__main__':
-    path = 'input.md'  # input('Укажите путь к файлу:\n')
-    excel_path = 'output.xlsx'  # input('Введите название для excel файла в формате ".xlsx":\n')
+    file_path = os.path.abspath(input(
+        'Введите путь относительно текущего каталога:\n'))
+    if not os.path.exists(file_path):
+        exit('неверный путь к файлу')
 
-    with open(path, 'r', encoding='utf-8') as f:
+    excel_path = input(
+        'Введите название для excel файла без расширения:\n') + '.xlsx'
+
+    with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read().split('\n')
 
     doc = TaskParcer(content)

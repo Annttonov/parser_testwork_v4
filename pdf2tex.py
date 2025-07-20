@@ -9,6 +9,7 @@ input_path = 'input.pdf'
 
 
 def ai_convert_pdf_to_md(pdf_file: str):
+    '''Конвертрует ".pdf" в ".md" файл'''
     url_pdf = 'https://api.mathpix.com/v3/pdf/'
 
     APP_ID = os.getenv('APP_ID')
