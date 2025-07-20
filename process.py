@@ -1,9 +1,8 @@
 '''Модуль для сохранения данных в EXCEL файл.'''
 import os
+from parser import TaskParcer
 
 import pandas
-
-from parser import TaskParcer
 
 if __name__ == '__main__':
     file_path = os.path.abspath(input(

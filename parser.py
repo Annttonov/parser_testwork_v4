@@ -2,16 +2,8 @@
 в структурированные данные."""
 import re
 
-from constants import (
-    ONLY_CHAPTER_RE,
-    CHAPTER_RE,
-    VAR_RE,
-    LEVEL_RE,
-    TASK_RE,
-    TASK_NUMBER_RE,
-    SYMBOLS,
-    CLASSES
-)
+from constants import (CHAPTER_RE, CLASSES, LEVEL_RE, ONLY_CHAPTER_RE, SYMBOLS,
+                       TASK_NUMBER_RE, TASK_RE, VAR_RE)
 
 
 class Parser:
