@@ -2,8 +2,8 @@
 в структурированные данные."""
 import re
 
-from constants import (CHAPTER_RE, CLASSES, LEVEL_RE, ONLY_CHAPTER_RE, SYMBOLS,
-                       TASK_NUMBER_RE, TASK_RE, VAR_RE)
+from constants import (CHAPTER_RE, CLASSES, LEVEL_RE, LEVLES, ONLY_CHAPTER_RE,
+                       SYMBOLS, TASK_NUMBER_RE, TASK_RE, VAR_RE)
 
 
 class Parser:
@@ -55,6 +55,7 @@ class TaskParcer(Parser):
         self.answers = AnswerParser(content).answers
         self.description = self.get_description(content)
         self.tasks = self.process(content)
+        self.outline = self.recoding_outline_to_list()
 
     def process(self, content):
         """Основной метод обработки контента.
@@ -414,14 +415,14 @@ class TaskParcer(Parser):
                     result,
                     chapter_num,
                     answers=self.answers,
-                    level=True)
+                    its_level=True)
                 return result, index
         result = self.save_tasks(
             tasks_list,
             result,
             chapter_num,
             answers=self.answers,
-            level=True)
+            its_level=True)
         return result, index
 
     def parse_level_tasks(self, unparse_tasks, level, tasks):
@@ -508,7 +509,6 @@ class TaskParcer(Parser):
                 else:
                     tasks[v1_match.group(1)] = {
                         'v1': item_v1[v1_match.end():],
-                        'v2': item_v1[v1_match.end():]
                     }
                     index_v1, index_v2 = index_v1 + 1, index_v2 + 1
                     continue
@@ -567,7 +567,25 @@ class TaskParcer(Parser):
                 tasks['task'] = self.write_item(tasks['task'],
                                                 unparse_tasks[index_v1],
                                                 'v1')
+        tasks = self.check_task_condition(tasks)
+        return tasks
 
+    def check_task_condition(self, tasks: dict):
+        task = False
+        condition = False
+        for item in tasks.keys():
+            if task and condition:
+                return self.reorganise_tasks(tasks)
+            if item == 'task':
+                task = True
+            elif re.search(r'\d|\w', item):
+                condition = True
+        return tasks
+
+    def reorganise_tasks(self, tasks):
+        for item in tasks['task'].values():
+            tasks['task_condition'] = f'{tasks['task_condition']} {item}'
+        tasks.pop('task')
         return tasks
 
     def write_item(self, data, item, key):
@@ -587,13 +605,24 @@ class TaskParcer(Parser):
             data[key] = item
         return data
 
+    def update_outline(self, chapter, variant, outline) -> str:
+        if outline[chapter]['variants'].get(variant):
+            return outline[chapter]['variants'][variant]['id']
+        outline[chapter]['variants'][variant] = {
+            'id': outline['next_id'],
+            'name': f'Вариант {variant}',
+            'parent': outline[chapter]['id']
+        }
+        outline['next_id'] += 1
+        return outline[chapter]['variants'][variant]['id']
+
     def save_tasks(self, tasks_list: dict,
                    result: list,
                    chapter_num: str,
                    answers: dict,
                    variant: str = None,
                    task_number: str = None,
-                   level: str = None):
+                   its_level: str = None):
         """Сохраняет задачи в итоговый результат.
 
         Args:
@@ -603,57 +632,57 @@ class TaskParcer(Parser):
             answers (dict): Словарь ответов
             variant (str, optional): Вариант задачи
             task_number (str, optional): Номер задачи
-            level (str, optional): Уровень сложности
+            its_level (str, optional): флаг, что элемент - это объект уровеня
 
         Returns:
             list: Обновленный список результатов
         """
-        if chapter_num == 'С-64*':
-            pass
+        task_condition = str()
         for key, value in tasks_list.items():
             if key == 'task_condition':
-                text = f'Условие для задачи {
-                    task_number if task_number else chapter_num}'
-                item = {
-                        'id_tasks_book': text,
-                        'task': value,
-                        'answer': 'Условие для задачи.',
-                        'classes': CLASSES,
-                        'paragraph': self.outline[chapter_num]['id'],
-                        'topic_id': 1,
-                        'level': 1
-                    }
-                result.append(item)
+                task_condition = value
             else:
                 for number, task in value.items():
-                    if level:
+                    if its_level:
                         task_number = number
-                        text = f'Уровень {key}, задача {task_number}'
+                        id_tasks_book = task_number
                         answer = 'Отстутствует'
+                        level = LEVLES[self.normalize_symbol(key.upper())]
+                        variant_id = self.update_outline(
+                            chapter_num, key, self.outline
+                        )
                     else:
+                        level = LEVLES[variant] if LEVLES.get(variant) else (
+                            1 if variant.isalnum() else number[-1]
+                        )
                         if variant.isalpha():
-                            current_variant = variant + number[-1]
+                            current_variant = variant.upper() + number[-1]
                         else:
                             current_variant = number[-1]
-                        text = f'Вариант {
-                            current_variant}, задача {task_number},{
-                            '' if key == 'task' else f' условие {key}'}'
-                        answer_key = f'CH({chapter_num})_VAR({
-                            current_variant})_TSK{
-                            f'({task_number})' if key == 'task' else f'({
-                                task_number})_CND({
-                                    self.normalize_symbol(key).lower(
-                                    )})'}'
+                        id_tasks_book = '' if (
+                            key == 'task') else self.normalize_symbol(
+                                key).lower()
+                        id_tasks_book = task_number + id_tasks_book
+                        variant_id = self.update_outline(
+                            chapter_num, current_variant, self.outline)
+                        condition = '' if key == 'task' else '_CND({})'.format(
+                                self.normalize_symbol(key).lower()
+                            )
+                        answer_key = 'CH({})_VAR({})_TASK({}){}'.format(
+                            chapter_num,
+                            current_variant,
+                            task_number,
+                            condition)
                         answer = answers[answer_key]['answer'] if (
                             answer_key in answers) else 'Отстутствует'
                     item = {
-                        'id_tasks_book': text,
-                        'task': task,
+                        'id_tasks_book': id_tasks_book,
+                        'task': f'{task_condition} {task}',
                         'answer': answer,
                         'classes': CLASSES,
-                        'paragraph': self.outline[chapter_num]['id'],
+                        'paragraph': variant_id,
                         'topic_id': 1,
-                        'level': 1
+                        'level': level
                     }
                     result.append(item)
 
@@ -696,6 +725,22 @@ class TaskParcer(Parser):
                 unparse_tasks.append(item)
         if unparse_tasks != []:
             return unparse_tasks, index
+
+    def recoding_variants(self, item: dict, recoded_outline: list) -> any:
+        if item is not None:
+            for i in item.values():
+                recoded_outline.append(i)
+        return recoded_outline
+
+    def recoding_outline_to_list(self):
+        recoded_outline = list()
+        self.outline.pop('next_id', None)
+        for item in self.outline.values():
+            variants = item.pop('variants', None)
+            recoded_outline.append(item)
+            recoded_outline = self.recoding_variants(
+                variants, recoded_outline)
+        return recoded_outline
 
 
 class AnswerParser(Parser):
@@ -785,7 +830,9 @@ class AnswerParser(Parser):
         if len(variant) > 8:
             return variant.strip()[-1]
         variant = variant.replace(' ', '')
-        if len(variant) < 2:
+        if len(variant) < 2 and variant.isalpha():
+            return variant.upper
+        elif len(variant) < 2:
             return variant
         symbol = SYMBOLS[variant[0]] if variant[0] in SYMBOLS else variant[0]
         number = variant[1]
@@ -814,13 +861,20 @@ class AnswerParser(Parser):
                 for item in table[1:]:
                     item = item.split('|')
                     task_number = item[1].strip()
+                    task = task_number if task_number.isalnum(
+                        ) else task_number[0]
                     answer = item[var_idx]
-                    key = f'CH({chapter})_VAR({variant})_TSK{
-                        f'({task_number})' if task_number.isalnum() else f'({
-                            task_number[0]})_CND({
-                                self.normalize_symbol(
-                                    task_number[1]).lower()})'
-                    }'
+                    condition = '' if task_number.isalnum(
+                        ) else '_CND({})'.format(
+                        self.normalize_symbol(
+                                    task_number[1]).lower()
+                    )
+                    key = 'CH({})_VAR({})_TASK({}){}'.format(
+                        chapter,
+                        variant,
+                        task,
+                        condition
+                        )
                     task_name = f'Глава {chapter}, вариант {
                         variant} задача {
                         task_number if task_number.isalnum() else f'{
@@ -864,8 +918,7 @@ class OutlineParser(Parser):
         Returns:
             dict: Структурированное оглавление
         """
-        id = 1
-        result = dict()
+        result = {'next_id': 1}
         supreme_chapter = 0
         while index < len(content):
             row = content[index]
@@ -878,31 +931,26 @@ class OutlineParser(Parser):
                 if chater_match:
                     chapter_name = self.normalize_symbol(
                         chater_match.group()[0]) + chater_match.group()[1:]
-                    name = chater_match.string[chater_match.end(
-                            ):].strip()
-                    name = name.replace('.', '', 1).strip() if name.startswith(
-                        '.') else name
                     result[chapter_name] = {
-                        'id': id,
-                        'book_id': chapter_name,
-                        'name': name,
+                        'id': result['next_id'],
+                        'name': chater_match.string,
                         'parent': supreme_chapter,
+                        'variants': {}
                     }
-                    id += 1
+                    result['next_id'] += 1
                 elif items[-1] == '':
                     key, value = result.popitem()
                     value['name'] = f'{value['name']} {items[0]}'
                     result[key] = value
                 elif items[-1].isalnum():
                     item = {
-                        'id': id,
-                        'book_id': items[0],
+                        'id': result['next_id'],
                         'name': items[0],
                         'parent': 0,
                     }
-                    result[id] = item
-                    supreme_chapter = id
-                    id += 1
+                    result[result['next_id']] = item
+                    supreme_chapter = result['next_id']
+                    result['next_id'] += 1
                 elif items[0].lower() == 'работа' and (
                             items[-1].lower() == 'стр.'):
                     pass

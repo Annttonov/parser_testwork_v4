@@ -18,7 +18,7 @@ if __name__ == '__main__':
 
     doc = TaskParcer(content)
     tasks_data = doc.tasks
-    chapters_data = [item for item in doc.outline.values()]
+    chapters_data = doc.outline
     authors_data = doc.description
 
     tasks_columns_order = [
