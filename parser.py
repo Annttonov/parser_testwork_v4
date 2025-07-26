@@ -467,6 +467,13 @@ class TaskParcer(Parser):
         item = re.sub(r'^a+?\)\s', 'а) ', item, 1)
         return item
 
+    def write_condition_in_variants(self, match, data):
+        current_task_symbol = match.group(1)
+        data[current_task_symbol] = {
+                    'v1': match.string[match.end():],
+                }
+        return data, current_task_symbol
+
     def parse_tasks(self, unparse_tasks):
         """Парсит список задач.
 
@@ -477,12 +484,20 @@ class TaskParcer(Parser):
             dict: Структурированные данные задач
         """
 
+        current_task_symbol = ''
         tasks = {
-            'task_condition': unparse_tasks[0],
-        }
+            'task_condition': ''}
+        task_condition = unparse_tasks[0]
+        condition_match = TASK_RE.search(
+            self.normalize_item(task_condition)
+        )
+        if condition_match:
+            tasks, current_task_symbol = self.write_condition_in_variants(
+                condition_match, tasks)
+        else:
+            tasks['task_condition'] = unparse_tasks[0]
         index_v1 = 1
         index_v2 = 2
-        current_task_symbol = ''
         if index_v1 >= len(unparse_tasks):
             return tasks
         if index_v2 >= len(unparse_tasks):
@@ -513,7 +528,12 @@ class TaskParcer(Parser):
                     index_v1, index_v2 = index_v1 + 1, index_v2 + 1
                     continue
             elif v1_match or v2_match:
-                if v1_match:
+                if tasks['task_condition'] == '':
+                    match = v1_match if v1_match else v2_match
+                    tasks, current_task_symbol = \
+                        self.write_condition_in_variants(
+                            match, tasks)
+                elif v1_match:
                     current_task_symbol = v1_match.group(1)
                     tasks[current_task_symbol] = {
                         'v1': item_v1[v1_match.end():]
@@ -530,6 +550,10 @@ class TaskParcer(Parser):
                 index_v1, index_v2 = index_v1 + 1, index_v2 + 1
                 continue
             elif (not v1_match and not v2_match) and current_task_symbol != '':
+                if condition_match and not tasks[current_task_symbol].get('v2'
+                                                                          ):
+                    tasks[current_task_symbol]['v2'] = tasks[
+                        current_task_symbol]['v1']
                 tasks[current_task_symbol] = self.write_item(
                     tasks[current_task_symbol],
                     item_v1,
